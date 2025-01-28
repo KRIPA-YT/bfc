@@ -1,3 +1,9 @@
+mod tree;
+use std::iter::Peekable;
+use std::ops::Deref;
+use tree::tree::Tree;
+
+use crate::tree::tree::Node;
 use std::collections::HashMap;
 use std::{env, fs};
 
@@ -14,7 +20,7 @@ struct Span {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum Op {
+enum Token {
     Right,
     Left,
     Inc,
@@ -26,30 +32,30 @@ enum Op {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Token {
-    op: Op,
+struct Op {
+    token: Token,
     count: usize,
     span: Span,
 }
 
-fn lex(source: String) -> Vec<Token> {
+fn lex(source: String) -> Vec<Op> {
     let op_map = HashMap::from([
-        ('>', Op::Right),
-        ('<', Op::Left),
-        ('+', Op::Inc),
-        ('-', Op::Dec),
-        ('.', Op::Output),
-        (',', Op::Input),
-        ('[', Op::JumpZero),
-        (']', Op::JumpNonZero),
+        ('>', Token::Right),
+        ('<', Token::Left),
+        ('+', Token::Inc),
+        ('-', Token::Dec),
+        ('.', Token::Output),
+        (',', Token::Input),
+        ('[', Token::JumpZero),
+        (']', Token::JumpNonZero),
     ]);
 
     let mut tokens = Vec::new();
     for (li, l) in source.split('\n').enumerate() {
         for (ci, c) in l.chars().enumerate() {
             if let Some(t) = op_map.get(&c) {
-                tokens.push(Token {
-                    op: *t,
+                tokens.push(Op {
+                    token: t.clone(),
                     count: 1,
                     span: Span {
                         beg: Loc { line: li, char: ci },
@@ -62,18 +68,25 @@ fn lex(source: String) -> Vec<Token> {
     tokens
 }
 
-fn collapse(source: Vec<Token>) -> Vec<Token> {
+fn collapse(source: Vec<Op>) -> Vec<Op> {
     let mut collapsed = Vec::new();
-    let collapsable = vec![Op::Right, Op::Left, Op::Inc, Op::Dec, Op::Output, Op::Input];
+    let collapsable = vec![
+        Token::Right,
+        Token::Left,
+        Token::Inc,
+        Token::Dec,
+        Token::Output,
+        Token::Input,
+    ];
     let mut count: usize = 1;
     let mut beg: Loc = source
         .get(0)
         .map_or(Loc { line: 0, char: 0 }, |t| t.span.beg);
     for (i, mut t) in source.clone().into_iter().enumerate() {
-        if collapsable.contains(&t.op)
+        if collapsable.contains(&t.token)
             && ({
                 let t_next = source.get(i + 1);
-                t_next.map_or(false, |t_next| t_next.op == t.op)
+                t_next.map_or(false, |t_next| t_next.token == t.token)
             })
         {
             count += 1;
@@ -87,11 +100,36 @@ fn collapse(source: Vec<Token>) -> Vec<Token> {
             beg = source
                 .get(i + 1)
                 .map_or(Loc { line: 0, char: 0 }, |t| t.span.beg);
-            dbg!(beg);
             count = 1;
         }
     }
     collapsed
+}
+
+fn parse_tree<T>(source: &mut Peekable<T>) -> Tree<Op>
+where
+    T: Iterator<Item = Op>,
+{
+    let mut tree = Tree::new();
+    while let Some(t) = source.next() {
+        tree.push(Node::Leaf { value: t.clone() });
+        if t.token == Token::JumpZero {
+            tree.push(Node::Internal {
+                children: parse_tree(source),
+            });
+        }
+        if source
+            .peek()
+            .map_or(false, |n| (*n).token == Token::JumpNonZero)
+        {
+            return tree;
+        }
+    }
+    tree
+}
+
+fn into_tree(source: Vec<Op>) -> Tree<Op> {
+    parse_tree(&mut source.into_iter().peekable())
 }
 
 fn main() {
@@ -100,5 +138,6 @@ fn main() {
     let contents = fs::read_to_string(file_path).expect("File not found!");
     let tokens = lex(contents);
     let ops = collapse(tokens);
-    dbg!(ops);
+    let tree = into_tree(ops);
+    dbg!(tree);
 }
