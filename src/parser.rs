@@ -27,6 +27,31 @@ pub mod parser {
         JumpNonZero,
     }
 
+    impl Token {
+        fn new(c: char) -> Option<Token> {
+            match c {
+                '>' => Some(Token::Right),
+                '<' => Some(Token::Left),
+                '+' => Some(Token::Inc),
+                '-' => Some(Token::Dec),
+                '.' => Some(Token::Output),
+                ',' => Some(Token::Input),
+                '[' => Some(Token::JumpZero),
+                ']' => Some(Token::JumpNonZero),
+                _ => None,
+            }
+        }
+
+        fn is_collapsable(&self) -> bool {
+            match self {
+                Self::Right | Self::Left | Self::Inc | Self::Dec | Self::Output | Self::Input => {
+                    true
+                }
+                Self::JumpZero | Self::JumpNonZero => false,
+            }
+        }
+    }
+
     #[derive(Debug, Clone, Copy)]
     pub struct Op {
         token: Token,
@@ -35,50 +60,39 @@ pub mod parser {
     }
 
     fn lex(source: String) -> Vec<Op> {
-        let mut tokens = Vec::new();
-        for (li, l) in source.split('\n').enumerate() {
-            for (ci, c) in l.chars().enumerate() {
-                tokens.push(Op {
-                    token: match c {
-                        '>' => Token::Right,
-                        '<' => Token::Left,
-                        '+' => Token::Inc,
-                        '-' => Token::Dec,
-                        '.' => Token::Output,
-                        ',' => Token::Input,
-                        '[' => Token::JumpZero,
-                        ']' => Token::JumpNonZero,
-                        _ => {
-                            continue;
-                        }
-                    },
-                    count: 1,
-                    span: Span {
-                        beg: Loc { line: li, char: ci },
-                        end: Loc { line: li, char: ci },
-                    },
-                });
-            }
-        }
-        tokens
+        source
+            .split('\n')
+            .enumerate()
+            .flat_map(|(li, l)| {
+                l.chars()
+                    .enumerate()
+                    .filter_map(|(ci, c)| Token::new(c).map(|t| (ci, t)))
+                    .map(move |(ci, token)| Op {
+                        token,
+                        count: 1,
+                        span: Span {
+                            beg: Loc {
+                                line: li.clone(),
+                                char: ci.clone(),
+                            },
+                            end: Loc {
+                                line: li.clone(),
+                                char: ci.clone(),
+                            },
+                        },
+                    })
+            })
+            .collect()
     }
 
     fn collapse(source: Vec<Op>) -> Vec<Op> {
         let mut collapsed = Vec::new();
-        let collapsable = vec![
-            Token::Right,
-            Token::Left,
-            Token::Inc,
-            Token::Dec,
-            Token::Output,
-            Token::Input,
-        ];
         let mut count: usize = 1;
         let mut beg: Loc = source
             .get(0)
             .map_or(Loc { line: 0, char: 0 }, |t| t.span.beg);
         for (i, mut t) in source.clone().into_iter().enumerate() {
-            if collapsable.contains(&t.token)
+            if t.token.is_collapsable()
                 && ({
                     let t_next = source.get(i + 1);
                     t_next.map_or(false, |t_next| t_next.token == t.token)
