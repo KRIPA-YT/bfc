@@ -1,9 +1,10 @@
 pub mod parser {
+    use itertools::Itertools;
     use std::{cmp::Ordering, iter::Peekable};
 
     pub use crate::tree::tree::{Node, Tree};
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, PartialEq)]
     pub enum Loc {
         Single { pos: Pos },
         Span { beg: Pos, end: Pos },
@@ -20,28 +21,39 @@ pub mod parser {
             }
         }
 
-        fn into_beg_or_pos(self) -> Pos {
-            *self.get_beg_or_pos()
+        pub fn new_min(beg: Pos, end: Pos) -> Self {
+            match std::cmp::Ord::cmp(&beg, &end) {
+                Ordering::Less => Self::Span { beg, end },
+                Ordering::Equal | Ordering::Greater => Self::Single { pos: beg },
+            }
         }
 
-        fn into_end_or_pos(self) -> Pos {
-            *self.get_end_or_pos()
-        }
-
-        fn get_beg_or_pos(&self) -> &Pos {
+        pub fn into_beg_or_pos(self) -> Pos {
             match self {
                 Self::Single { pos } | Self::Span { beg: pos, end: _ } => pos,
             }
         }
 
-        fn get_end_or_pos(&self) -> &Pos {
+        pub fn into_end_or_pos(self) -> Pos {
+            match self {
+                Self::Single { pos } | Self::Span { beg: _, end: pos } => pos,
+            }
+        }
+
+        pub fn get_beg_or_pos(&self) -> &Pos {
+            match self {
+                Self::Single { pos } | Self::Span { beg: pos, end: _ } => pos,
+            }
+        }
+
+        pub fn get_end_or_pos(&self) -> &Pos {
             match self {
                 Self::Single { pos } | Self::Span { beg: _, end: pos } => pos,
             }
         }
     }
 
-    #[derive(Debug, PartialOrd, Eq, PartialEq, Clone, Copy)]
+    #[derive(Debug, PartialOrd, Eq, PartialEq, Clone)]
     pub struct Pos {
         line: usize,
         char: usize,
@@ -56,7 +68,7 @@ pub mod parser {
         }
     }
 
-    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[derive(Debug, PartialEq, Clone)]
     pub enum Token {
         Right,
         Left,
@@ -82,18 +94,9 @@ pub mod parser {
                 _ => None,
             }
         }
-
-        fn is_collapsable(&self) -> bool {
-            match self {
-                Self::Right | Self::Left | Self::Inc | Self::Dec | Self::Output | Self::Input => {
-                    true
-                }
-                Self::JumpZero | Self::JumpNonZero => false,
-            }
-        }
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, PartialEq)]
     pub struct Op {
         token: Token,
         count: usize,
@@ -120,31 +123,34 @@ pub mod parser {
     }
 
     fn collapse(source: Vec<Op>) -> Vec<Op> {
-        let mut collapsed: Vec<Op> = Vec::new();
-        let mut count: usize = 1;
-        let mut beg: &Pos = source
-            .get(0)
-            .map_or(&Pos { line: 0, char: 0 }, |t| t.loc.get_beg_or_pos());
-        for (i, mut t) in source.clone().into_iter().enumerate() {
-            if t.token.is_collapsable()
-                && ({
-                    let t_next = source.get(i + 1);
-                    t_next.map_or(false, |t_next| t_next.token == t.token)
-                })
-            {
-                count += 1;
-            } else {
-                t.count = count;
-                let end = t.loc.into_end_or_pos();
-                t.loc = Loc::new(*beg, end).unwrap_or(Loc::Single { pos: end });
-                collapsed.push(t);
-                beg = source
-                    .get(i + 1)
-                    .map_or(&Pos { line: 0, char: 0 }, |t| t.loc.get_beg_or_pos());
-                count = 1;
-            }
-        }
-        collapsed
+        source
+            .into_iter()
+            .chunk_by(|x| x.token.clone())
+            .into_iter()
+            .flat_map(|(token, chunk)| {
+                let mut ops: Vec<Op> = chunk.collect_vec();
+                match token {
+                    Token::Right
+                    | Token::Left
+                    | Token::Inc
+                    | Token::Dec
+                    | Token::Output
+                    | Token::Input => {
+                        vec![Op {
+                            token,
+                            count: ops.len(),
+                            loc: Loc::new_min(
+                                ops.remove(0).loc.into_beg_or_pos(),
+                                ops.pop().map_or(Pos { line: 0, char: 0 }, |op| {
+                                    op.loc.into_end_or_pos()
+                                }),
+                            ),
+                        }]
+                    }
+                    Token::JumpZero | Token::JumpNonZero => ops,
+                }
+            })
+            .collect()
     }
 
     #[derive(Debug)]
