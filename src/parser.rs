@@ -2,7 +2,6 @@ pub mod parser {
     use std::iter::Peekable;
 
     pub use crate::tree::tree::{Node, Tree};
-    use std::collections::HashMap;
 
     #[derive(Debug, Clone, Copy)]
     pub struct Loc {
@@ -36,30 +35,29 @@ pub mod parser {
     }
 
     fn lex(source: String) -> Vec<Op> {
-        let op_map = HashMap::from([
-            ('>', Token::Right),
-            ('<', Token::Left),
-            ('+', Token::Inc),
-            ('-', Token::Dec),
-            ('.', Token::Output),
-            (',', Token::Input),
-            ('[', Token::JumpZero),
-            (']', Token::JumpNonZero),
-        ]);
-
         let mut tokens = Vec::new();
         for (li, l) in source.split('\n').enumerate() {
             for (ci, c) in l.chars().enumerate() {
-                if let Some(t) = op_map.get(&c) {
-                    tokens.push(Op {
-                        token: t.clone(),
-                        count: 1,
-                        span: Span {
-                            beg: Loc { line: li, char: ci },
-                            end: Loc { line: li, char: ci },
-                        },
-                    })
-                }
+                tokens.push(Op {
+                    token: match c {
+                        '>' => Token::Right,
+                        '<' => Token::Left,
+                        '+' => Token::Inc,
+                        '-' => Token::Dec,
+                        '.' => Token::Output,
+                        ',' => Token::Input,
+                        '[' => Token::JumpZero,
+                        ']' => Token::JumpNonZero,
+                        _ => {
+                            continue;
+                        }
+                    },
+                    count: 1,
+                    span: Span {
+                        beg: Loc { line: li, char: ci },
+                        end: Loc { line: li, char: ci },
+                    },
+                });
             }
         }
         tokens
