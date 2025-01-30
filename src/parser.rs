@@ -98,9 +98,25 @@ pub mod parser {
 
     #[derive(Debug, Clone, PartialEq)]
     pub struct Op {
-        token: Token,
-        count: usize,
-        loc: Loc,
+        pub token: Token,
+        pub count: usize,
+        pub loc: Loc,
+    }
+
+    #[derive(Debug)]
+    pub enum Error {
+        ParseErr(ParseErr),
+    }
+
+    impl From<ParseErr> for Error {
+        fn from(err: ParseErr) -> Self {
+            Self::ParseErr(err)
+        }
+    }
+
+    #[derive(Debug)]
+    pub enum ParseErr {
+        UnmatchedBracket(Option<Pos>),
     }
 
     fn lex(source: String) -> Vec<Op> {
@@ -153,11 +169,6 @@ pub mod parser {
             .collect()
     }
 
-    #[derive(Debug)]
-    pub enum ParseErr {
-        UnmatchedBracket(Option<Pos>),
-    }
-
     fn parse_tree<T>(source: &mut Peekable<T>, depth: usize) -> Result<Tree<Op>, ParseErr>
     where
         T: Iterator<Item = Op>,
@@ -192,17 +203,6 @@ pub mod parser {
 
     fn into_tree(source: Vec<Op>) -> Result<Tree<Op>, ParseErr> {
         parse_tree(&mut source.into_iter().peekable(), 0)
-    }
-
-    #[derive(Debug)]
-    pub enum Error {
-        ParseErr(ParseErr),
-    }
-
-    impl From<ParseErr> for Error {
-        fn from(err: ParseErr) -> Self {
-            Self::ParseErr(err)
-        }
     }
 
     pub fn parse(source: String) -> Result<Tree<Op>, Error> {
